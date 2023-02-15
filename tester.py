@@ -1,5 +1,4 @@
 from pathlib import Path
-from re import S
 from typing import Optional
 
 import matplotlib.pyplot as plt
@@ -25,7 +24,6 @@ class SingleImageTester:
         device: str = "cpu",
         num_classes: int = 10,
     ):
-
         img_tensor: torch.Tensor
         output: torch.Tensor
         preds: torch.Tensor
@@ -108,7 +106,6 @@ class RotatingImageClassifier:
         device: str = "cpu",
         num_classes: int = 10,
     ) -> None:
-
         self.model = model
         self.uncertainty = uncertainty
         self.threshold = threshold
@@ -117,10 +114,81 @@ class RotatingImageClassifier:
         self.mdeg = 180
         self.ndeg = self.mdeg // 10 + 1
 
-    def classify(self):
-        ldeg, lp, lu, classification = [], [], [], []
+    def classify(self, img: torch.Tensor, filename: str):
+        output: torch.Tensor
+        preds: torch.Tensor
 
-        scores = np.zeros((1, num_classes))
-        rimgs = np.zeros((28, 28 * ndeg))
-        for i, deg in enumerate(np.linspace(0, mdeg, ndeg)):
-            nimg = rotate_img()
+        ldeg, lp, lu, classifications = [], [], [], []
+
+        scores = np.zeros((1, self.num_classes))
+        rimgs = np.zeros((28, 28 * self.ndeg))
+        for i, deg in enumerate(np.linspace(0, self.mdeg, self.ndeg)):
+            nimg = rotate_img(img.numpy()[0], deg).reshape(28, 28)
+            nimg = nimg.clip(min=0, max=1)
+
+            start, stop = i * 28, (i + 1) * 28
+            rimgs[:, start:stop] = nimg
+            transform = transforms.ToTensor()
+            img_tensor = transform(nimg)
+            img_tensor.unsqueeze_(0)
+            img_variable: torch.Tensor = Variable(img_tensor)
+            img_variable = img_variable.to(self.device)
+
+            output = self.model(img_variable)
+            _, preds = torch.max(output, dim=1)
+
+            if self.uncertainty:
+                evidence = F.relu(output)
+                alpha = evidence + 1
+                alpha_sum = torch.sum(alpha, dim=1, keepdim=True)
+                uncertainty_val = self.num_classes / alpha_sum
+                prob = alpha / alpha_sum
+                lu.append(uncertainty_val.mean())
+
+            else:
+                prob = F.softmax(output, dim=1)
+
+            output = output.flatten()
+            prob = prob.flatten()
+            preds = preds.flatten()
+
+            classifications.append(preds[0].item())
+            probs_np: np.ndarray = prob.detach().numpy()
+            scores += probs_np >= self.threshold
+            ldeg.append(deg)
+            lp.append(prob.tolist())
+
+        labels: np.ndarray = np.arange(10)[scores[0].astype(bool)]
+        lp = np.array(lp)[:, labels]  # type: ignore
+        c = ["black", "blue", "red", "brown", "purple", "cyan"]
+        marker = ["s", "^", "o"] * 2
+        labels = labels.tolist()
+        fig = plt.figure(figsize=[6.2, 5])
+        fig, axs = plt.subplot(3, gridspec_kw={"height_ratios": [4, 1, 12]})
+
+        for i in range(len(labels)):
+            axs[2].plot(
+                ldeg, lp[:, i], marker=marker[i], c=c[i]  # type: ignore
+            )
+
+        if self.uncertainty:
+            labels += ["uncertainty"]
+            axs[2].plot(ldeg, lu, marker="<", c="red")
+
+        print(classifications)
+
+        axs[0].set_title('Rotated "1" Digit Classifications')
+        axs[0].imshow(1 - rimgs, cmap="gray")
+        axs[0].axis("off")
+        plt.pause(0.001)
+
+        axs[1].table(cellText=[classifications], bbox=[0, 1.2, 1, 1])
+        axs[1].axis("off")
+
+        axs[2].legend(labels)
+        axs[2].set_xlim([0, self.mdeg])
+        axs[2].set_ylim([0, 1])
+        axs[2].set_xlabel("Rotation Degree")
+        axs[2].set_ylabel("Classification Probability")
+
+        plt.savefig(filename)

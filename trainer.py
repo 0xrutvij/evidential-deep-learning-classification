@@ -155,7 +155,7 @@ class ClassificationModelTrainer:
 @final
 @dataclass(kw_only=True)
 class CrossEntropyModelTrainer(ClassificationModelTrainer):
-    criterion = field(default_factory=nn.CrossEntropyLoss)
+    criterion: nn.CrossEntropyLoss = field(default_factory=nn.CrossEntropyLoss)
 
     def _get_loss(
         self, outputs: torch.Tensor, labels: torch.Tensor, epoch: int
