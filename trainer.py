@@ -11,7 +11,7 @@ from torch.optim.lr_scheduler import _LRScheduler
 from torch.optim.optimizer import Optimizer
 from tqdm import tqdm
 
-from data import MNISTDataModule
+from data import AbstractDataModule
 
 LossFunction = Callable[
     [torch.Tensor, torch.Tensor, int, int, int, str],
@@ -54,7 +54,7 @@ class Metrics:
 @dataclass(kw_only=True)
 class ClassificationModelTrainer:
     model: nn.Module
-    dataloaders: MNISTDataModule
+    dataloaders: AbstractDataModule
     num_classes: int
     optimizer: Optimizer
     scheduler: Optional[_LRScheduler]
@@ -97,8 +97,8 @@ class ClassificationModelTrainer:
                 self.model.eval()
 
         for _, (inputs, labels) in enumerate(dataloader):
-            inputs.to(self.device)
-            labels.to(self.device)
+            inputs = inputs.to(self.device)
+            labels = labels.to(self.device)
 
             self.optimizer.zero_grad()
             with torch.set_grad_enabled(phase == "train"):
@@ -155,7 +155,7 @@ class ClassificationModelTrainer:
 @final
 @dataclass(kw_only=True)
 class CrossEntropyModelTrainer(ClassificationModelTrainer):
-    criterion: nn.CrossEntropyLoss = field(default_factory=nn.CrossEntropyLoss)
+    criterion: nn.CrossEntropyLoss
 
     def _get_loss(
         self, outputs: torch.Tensor, labels: torch.Tensor, epoch: int
@@ -176,7 +176,7 @@ class EvidentialTrainer(ClassificationModelTrainer):
 
         y = F.one_hot(labels, self.num_classes)
         y = y.to(self.device)
-        preds = torch.max(outputs, dim=1)
+        _, preds = torch.max(outputs, dim=1)
 
         loss = self.criterion(
             outputs, y.float(), epoch, self.num_classes, 10, self.device

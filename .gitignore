@@ -1,1 +1,7 @@
-data/
+data/mnist
+data/svhn
+
+.mypy_cache
+__pycache__
+
+models/
